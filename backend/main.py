@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 # MongoDB connection
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://stark-s_database:welcomestark@airesumemanager.swknryw.mongodb.net/?retryWrites=true&w=majority&appName=AIResumeManager")
+MONGO_URI = os.getenv("MONGO_URI", "your mongodb atlas url")
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.ai_resume_manager
 
@@ -54,7 +54,7 @@ sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # --- MODIFIED: Google Generative AI Configuration ---
 # Use the key from .env or the one you provided as a fallback
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "AIzaSyAXVJr7P85EuMoVG_o14HqsT9lCGPgEgSI")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "your google api")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
     # Using gemini-1.5-flash for speed and capability
