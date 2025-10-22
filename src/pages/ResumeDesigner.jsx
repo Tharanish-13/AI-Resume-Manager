@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { templateService } from '../services/api';
 import { Palette, Download, Eye, Zap } from 'lucide-react';
+import Modal from 'react-modal';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+Modal.setAppElement('#root');
 
 const ResumeDesigner = () => {
   const [templates, setTemplates] = useState([]);
@@ -39,6 +44,12 @@ const ResumeDesigner = () => {
     ]
   });
   const [loading, setLoading] = useState(true);
+
+  // Modal state for preview
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Ref for PDF download
+  const previewRef = useRef();
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -108,6 +119,26 @@ const ResumeDesigner = () => {
       newData[section].splice(index, 1);
       return newData;
     });
+  };
+
+  // PDF Download Handler
+  const handleDownloadPDF = async () => {
+    const input = previewRef.current;
+    if (!input) return;
+    const canvas = await html2canvas(input, { scale: 2 });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'pt',
+      format: 'a4'
+    });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfWidth = pageWidth;
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save('resume.pdf');
   };
 
   if (loading) {
@@ -343,7 +374,7 @@ const ResumeDesigner = () => {
           <div className="lg:col-span-1">
             <div className="sticky top-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Preview</h2>
-              <div className="bg-white rounded-xl p-6 shadow-sm">
+              <div ref={previewRef} className="bg-white rounded-xl p-6 shadow-sm">
                 <div className="mb-6">
                   <h3 className="text-lg font-bold text-gray-900">{resumeData.personalInfo.fullName || 'Your Name'}</h3>
                   <p className="text-gray-600">{resumeData.personalInfo.email}</p>
@@ -399,11 +430,17 @@ const ResumeDesigner = () => {
               </div>
               
               <div className="mt-6 space-y-3">
-                <button className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center space-x-2">
+                <button
+                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center space-x-2"
+                  onClick={() => setShowPreview(true)}
+                >
                   <Eye className="w-5 h-5" />
                   <span>Preview Full Resume</span>
                 </button>
-                <button className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 flex items-center justify-center space-x-2">
+                <button
+                  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 flex items-center justify-center space-x-2"
+                  onClick={handleDownloadPDF}
+                >
                   <Download className="w-5 h-5" />
                   <span>Download PDF</span>
                 </button>
@@ -416,6 +453,87 @@ const ResumeDesigner = () => {
           </div>
         </div>
       </div>
+
+      {/* Full Resume Preview Modal */}
+      <Modal
+        isOpen={showPreview}
+        onRequestClose={() => setShowPreview(false)}
+        contentLabel="Full Resume Preview"
+        style={{
+          content: {
+            maxWidth: '700px',
+            margin: 'auto',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            borderRadius: '16px',
+            padding: '32px'
+          }
+        }}
+      >
+        <button
+          onClick={() => setShowPreview(false)}
+          className="mb-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 float-right"
+        >
+          Close
+        </button>
+        <div>
+          <h2 className="text-2xl font-bold mb-2">{resumeData.personalInfo.fullName || 'Your Name'}</h2>
+          <p className="text-gray-600">{resumeData.personalInfo.email}</p>
+          <p className="text-gray-600">{resumeData.personalInfo.phone}</p>
+          <p className="text-gray-600 mb-4">{resumeData.personalInfo.location}</p>
+          {resumeData.personalInfo.summary && (
+            <div className="mb-4">
+              <h4 className="font-semibold mb-1">Summary</h4>
+              <p>{resumeData.personalInfo.summary}</p>
+            </div>
+          )}
+          {resumeData.experience.some(exp => exp.title) && (
+            <div className="mb-4">
+              <h4 className="font-semibold mb-1">Experience</h4>
+              {resumeData.experience.filter(exp => exp.title).map((exp, idx) => (
+                <div key={idx} className="mb-2">
+                  <strong>{exp.title}</strong> at {exp.company} ({exp.duration})
+                  <div>{exp.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {resumeData.skills.length > 0 && (
+            <div className="mb-4">
+              <h4 className="font-semibold mb-1">Skills</h4>
+              <div className="flex flex-wrap gap-2">
+                {resumeData.skills.map((skill, idx) => (
+                  <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded">
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {resumeData.education.some(edu => edu.degree) && (
+            <div>
+              <h4 className="font-semibold mb-1">Education</h4>
+              {resumeData.education.filter(edu => edu.degree).map((edu, idx) => (
+                <div key={idx} className="mb-2">
+                  <strong>{edu.degree}</strong> at {edu.school} ({edu.year})
+                  {edu.gpa && <span> | GPA: {edu.gpa}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {resumeData.projects.some(proj => proj.name) && (
+            <div className="mt-4">
+              <h4 className="font-semibold mb-1">Projects</h4>
+              {resumeData.projects.filter(proj => proj.name).map((proj, idx) => (
+                <div key={idx} className="mb-2">
+                  <strong>{proj.name}</strong>: {proj.description}
+                  {proj.technologies && <div className="text-xs text-gray-500">Tech: {proj.technologies}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

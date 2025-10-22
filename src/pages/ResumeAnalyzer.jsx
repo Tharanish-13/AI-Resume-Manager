@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { useDropzone } from 'react-dropzone';
 import { resumeService, jobService } from '../services/api';
 import { 
@@ -74,6 +76,32 @@ const ResumeAnalyzer = () => {
     if (score >= 0.6) return 'Good Match';
     return 'Needs Improvement';
   };
+
+  // ...existing code...
+const handleExportResults = () => {
+  if (!analysisResults) return;
+
+  // Prepare data for Excel
+  const data = analysisResults.ranked_resumes.map(resume => ({
+    Candidate: resume.filename,
+    'Match %': `${(resume.similarity_score * 100).toFixed(2)}%`,
+    'Missing Skills': resume.missing_skills && resume.missing_skills.length > 0
+      ? resume.missing_skills.join(', ')
+      : 'None',
+    'Improvements Needed': resume.improvements || 'N/A'
+  }));
+
+  // Add header row
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Results');
+
+  // Export to file
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const fileName = 'resume-analysis-results.xlsx';
+  saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), fileName);
+};
+// ...existing code...
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -318,10 +346,14 @@ const ResumeAnalyzer = () => {
                 >
                   Start New Analysis
                 </button>
-                <button className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 flex items-center space-x-2">
-                  <Download className="w-5 h-5" />
-                  <span>Export Results</span>
-                </button>
+              
+              <button
+                onClick={handleExportResults}
+                className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 flex items-center space-x-2"
+              >
+                <Download className="w-5 h-5" />
+                <span>Export Results</span>
+              </button>
               </div>
             </div>
           </div>

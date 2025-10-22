@@ -39,12 +39,12 @@ app.add_middleware(
 )
 
 # MongoDB connection
-MONGO_URI = os.getenv("MONGO_URI", "your mongodb atlas url")
+MONGO_URI = os.getenv("MONGO_URI")
 client = AsyncIOMotorClient(MONGO_URI)
 db = client.ai_resume_manager
 
 # Security
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -54,7 +54,7 @@ sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # --- MODIFIED: Google Generative AI Configuration ---
 # Use the key from .env or the one you provided as a fallback
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "your google api")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
     # Using gemini-1.5-flash for speed and capability
