@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { useDropzone } from 'react-dropzone';
 import { resumeService, jobService } from '../services/api';
 import { 
@@ -11,6 +13,18 @@ import {
   X,
   Download
 } from 'lucide-react';
+
+// Helper function to format the date string from the server
+const formatDate = (isoString) => {
+  if (!isoString) return 'N/A';
+  return new Date(isoString).toLocaleString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
 
 const ResumeAnalyzer = () => {
   const [step, setStep] = useState(1);
@@ -49,7 +63,11 @@ const ResumeAnalyzer = () => {
     setLoading(true);
 
     try {
-      const results = await jobService.analyzeJob(jobDescription);
+      const payload = {
+        ...jobDescription,
+        resume_ids: uploadedResumes.map(r => r.id) // send only current uploads
+      };
+      const results = await jobService.analyzeJob(payload);
       setAnalysisResults(results);
       setStep(3);
     } catch (error) {
@@ -73,6 +91,31 @@ const ResumeAnalyzer = () => {
     if (score >= 0.8) return 'Excellent Match';
     if (score >= 0.6) return 'Good Match';
     return 'Needs Improvement';
+  };
+
+  const handleExportResults = () => {
+    if (!analysisResults) return;
+
+    // Prepare data for Excel
+    const data = analysisResults.ranked_resumes.map(resume => ({
+      Candidate: resume.filename,
+      'Uploaded Date': formatDate(resume.uploaded_at), // Added date to export
+      'Match %': `${(resume.similarity_score * 100).toFixed(2)}%`,
+      'Missing Skills': resume.missing_skills && resume.missing_skills.length > 0
+        ? resume.missing_skills.join(', ')
+        : 'None',
+      'Improvements Needed': resume.improvements || 'N/A'
+    }));
+
+    // Add header row
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Results');
+
+    // Export to file
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const fileName = 'resume-analysis-results.xlsx';
+    saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), fileName);
   };
 
   return (
@@ -280,7 +323,10 @@ const ResumeAnalyzer = () => {
                         </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">{resume.filename}</h3>
-                          <p className="text-sm text-gray-500">Candidate Resume</p>
+                          {/* --- THIS IS THE MODIFIED PART --- */}
+                          <p className="text-sm text-gray-500">
+                            Uploaded: {formatDate(resume.uploaded_at)}
+                          </p>
                         </div>
                       </div>
                       
@@ -313,12 +359,21 @@ const ResumeAnalyzer = () => {
 
               <div className="mt-8 flex justify-between">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => {
+                    setStep(1);
+                    setUploadedResumes([]); // Clear session uploads
+                    setAnalysisResults(null); // Clear results
+                    setJobDescription({ title: '', description: '', requirements: '' }); // Clear job form
+                  }}
                   className="text-gray-600 hover:text-gray-700 font-medium"
                 >
                   Start New Analysis
                 </button>
-                <button className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 flex items-center space-x-2">
+                
+                <button
+                  onClick={handleExportResults}
+                  className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 flex items-center space-x-2"
+                >
                   <Download className="w-5 h-5" />
                   <span>Export Results</span>
                 </button>

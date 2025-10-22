@@ -2,8 +2,10 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from bson.errors import InvalidId
 from datetime import datetime, timedelta
 from typing import List, Optional
+from bson import ObjectId
 import os
 from dotenv import load_dotenv
 from passlib.context import CryptContext
@@ -14,8 +16,7 @@ from sentence_transformers import SentenceTransformer
 import PyPDF2
 from docx import Document
 from sklearn.metrics.pairwise import cosine_similarity
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
-import torch
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
@@ -38,28 +39,26 @@ client = AsyncIOMotorClient(MONGO_URI)
 db = client.ai_resume_manager
 
 # Security
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Initialize AI models
 sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
-MODEL_NAME = "google/flan-t5-small"
-device = 0 if torch.cuda.is_available() else -1  # for pipeline, -1 = CPU
 
-print("Loading model... (this may take a few minutes)")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, force_download=True)
-model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME, force_download=True)
+# --- MODIFIED: Google Generative AI Configuration ---
+# Use the key from .env or the one you provided as a fallback
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "AIzaSyAXVJr7P85EuMoVG_o14HqsT9lCGPgEgSI")
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
+    # Using gemini-1.5-flash for speed and capability
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    print("Warning: GOOGLE_API_KEY not found. AI features will use mock responses.")
+    gemini_model = None  # AI features will fallback to mock
+# --- End Modification ---
 
-# Create a text-generation pipeline (used for all AI endpoints)
-text_generator = pipeline(
-    "text2text-generation",
-    model=model,
-    tokenizer=tokenizer,
-    device=device
-)
-print("Model loaded successfully")
 
 # Pydantic models
 class UserCreate(BaseModel):
@@ -80,6 +79,7 @@ class JobDescription(BaseModel):
     title: str
     description: str
     requirements: str
+    resume_ids: Optional[List[str]] = None
 
 class InterviewQuestion(BaseModel):
     job_role: str
@@ -205,6 +205,44 @@ async def upload_resumes(files: List[UploadFile] = File(...), current_user: dict
         uploaded_resumes.append({"id": str(result.inserted_id), "filename": file.filename, "text_preview": text[:200]+"..." if len(text)>200 else text})
     return {"message": f"Uploaded {len(uploaded_resumes)} resumes", "resumes": uploaded_resumes}
 
+# --- NEW ENDPOINT TO GET ALL RESUMES ---
+@app.get("/resumes/all")
+async def get_all_resumes(current_user: dict = Depends(get_current_user)):
+    resumes = []
+    cursor = db.resumes.find({"uploaded_by": current_user["email"]}).sort("uploaded_at", -1)
+    async for resume in cursor:
+        resumes.append({
+            "id": str(resume["_id"]),
+            "filename": resume["filename"],
+            "uploaded_at": resume["uploaded_at"].isoformat(),
+            "content_type": resume["content_type"],
+            "text_preview": resume["text"][:200]+"..." if len(resume["text"])>200 else resume["text"]
+        })
+    return {"resumes": resumes}
+
+# --- NEW ENDPOINT TO DELETE A RESUME ---
+@app.delete("/resumes/{resume_id}")
+async def delete_resume(resume_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        obj_id = ObjectId(resume_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="Invalid resume ID format")
+
+    # Find the resume first to ensure it belongs to the user
+    resume = await db.resumes.find_one({"_id": obj_id, "uploaded_by": current_user["email"]})
+    
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found or you do not have permission to delete it")
+    
+    # Perform the deletion
+    delete_result = await db.resumes.delete_one({"_id": obj_id})
+    
+    if delete_result.deleted_count == 1:
+        return {"message": "Resume deleted successfully"}
+    else:
+        # This case should be rare if the find_one check passed, but it's good practice
+        raise HTTPException(status_code=500, detail="Failed to delete resume")
+    
 @app.post("/jobs/analyze")
 async def analyze_job(job: JobDescription, current_user: dict = Depends(get_current_user)):
     job_doc = {
@@ -215,7 +253,22 @@ async def analyze_job(job: JobDescription, current_user: dict = Depends(get_curr
         "created_at": datetime.utcnow()
     }
     job_result = await db.jobs.insert_one(job_doc)
-    resumes = await db.resumes.find({"uploaded_by": current_user["email"]}).to_list(None)
+
+    # If resume_ids provided, analyze only those; otherwise analyze all uploaded_by user
+    if job.resume_ids:
+        object_ids = []
+        for rid in job.resume_ids:
+            try:
+                object_ids.append(ObjectId(rid))
+            except Exception:
+                continue
+        if object_ids:
+            resumes = await db.resumes.find({"_id": {"$in": object_ids}, "uploaded_by": current_user["email"]}).to_list(None)
+        else:
+            resumes = []
+    else:
+        resumes = await db.resumes.find({"uploaded_by": current_user["email"]}).to_list(None)
+
     job_text = f"{job.title} {job.description} {job.requirements}"
     ranked_resumes = []
     for resume in resumes:
@@ -224,7 +277,8 @@ async def analyze_job(job: JobDescription, current_user: dict = Depends(get_curr
             "id": str(resume["_id"]),
             "filename": resume["filename"],
             "similarity_score": similarity_score,
-            "text_preview": resume["text"][:300]+"..." if len(resume["text"])>300 else resume["text"]
+            "text_preview": resume["text"][:300]+"..." if len(resume["text"])>300 else resume["text"],
+            "uploaded_at": resume.get("uploaded_at").isoformat() if resume.get("uploaded_at") else None
         })
     ranked_resumes.sort(key=lambda x: x["similarity_score"], reverse=True)
     await db.analyses.insert_one({
@@ -237,37 +291,163 @@ async def analyze_job(job: JobDescription, current_user: dict = Depends(get_curr
 
 # AI Endpoints using local model
 @app.post("/ai/enhance-resume")
-async def enhance_resume(request: ResumeEnhanceRequest, current_user: dict = Depends(get_current_user)):
-    prompt = f"Enhance this resume for a {request.target_job} position:\n{request.resume_text}"
-    output = text_generator(prompt, max_length=500)[0]['generated_text']
-    await db.enhancements.insert_one({
-        "original_text": request.resume_text,
-        "target_job": request.target_job,
-        "suggestions": output,
-        "user_email": current_user["email"],
-        "created_at": datetime.utcnow()
-    })
-    return {"suggestions": output}
+async def enhance_resume(
+    request: ResumeEnhanceRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        # --- MODIFIED: Use Google Gemini ---
+        suggestions = ""
+        if gemini_model:
+            system_prompt = "You are a professional resume enhancer. Provide specific, actionable improvements to make the resume more compelling for the target job."
+            user_prompt = f"Enhance this resume for the job: {request.target_job}\n\nResume:\n{request.resume_text}"
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            
+            generation_config = genai.types.GenerationConfig(max_output_tokens=500)
+            
+            try:
+                response = await gemini_model.generate_content_async(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+                suggestions = response.text
+            except ValueError:
+                suggestions = "The response was blocked due to safety settings. Please rephrase your request."
+            except Exception as e:
+                suggestions = f"Error generating suggestions: {str(e)}"
+        else:
+            # Mock suggestions when no API key
+            suggestions = """
+            (Mock Response) Here are some suggestions to enhance your resume:
+            
+            1. **Quantify Achievements**: Add specific numbers and metrics to demonstrate impact
+            2. **Action Verbs**: Start bullet points with strong action verbs like 'Led', 'Implemented', 'Achieved'
+            3. **Keywords**: Include relevant keywords from the job description
+            """
+        # --- End Modification ---
+        
+        # Save enhancement request
+        enhancement_doc = {
+            "original_text": request.resume_text,
+            "target_job": request.target_job,
+            "suggestions": suggestions,
+            "user_email": current_user["email"],
+            "created_at": datetime.utcnow()
+        }
+        
+        await db.enhancements.insert_one(enhancement_doc)
+        
+        return {"suggestions": suggestions}
+        
+    except Exception as e:
+        return {"suggestions": f"Enhancement service temporarily unavailable. Error: {str(e)}"}
 
 @app.post("/ai/interview-question")
-async def generate_interview_question(request: InterviewQuestion):
-    prompt = f"Generate one interview question for a {request.job_role} position."
-    output = text_generator(prompt, max_length=150)[0]['generated_text']
-    return {"question": output}
+async def generate_interview_question(
+    request: InterviewQuestion,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        # --- MODIFIED: Use Google Gemini ---
+        question = ""
+        if gemini_model:
+            system_prompt = "You are an experienced interviewer. Generate thoughtful interview questions for specific job roles."
+            user_prompt = f"Generate an interview question for a {request.job_role} position. Make it specific and relevant."
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            
+            generation_config = genai.types.GenerationConfig(max_output_tokens=150)
+            
+            try:
+                response = await gemini_model.generate_content_async(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+                question = response.text
+            except ValueError:
+                question = "The response was blocked due to safety settings. Please rephrase your request."
+            except Exception as e:
+                question = f"Error generating question: {str(e)}"
+        else:
+            # Mock questions
+            mock_questions = {
+                "software engineer": "Can you walk me through how you would design a scalable web application architecture?",
+                "data scientist": "How would you approach a machine learning problem with limited labeled data?",
+                "product manager": "How do you prioritize features when you have limited development resources?",
+                "default": "Tell me about a challenging project you worked on and how you overcame obstacles."
+            }
+            question = mock_questions.get(request.job_role.lower(), mock_questions["default"])
+        # --- End Modification ---
+        
+        return {"question": question}
+        
+    except Exception as e:
+        # Fallback question
+        return {"question": "What motivated you to apply for this position, and what unique value would you bring to our team?"}
 
 @app.post("/ai/chat")
-async def chat_with_ai(message: ChatMessage, current_user: dict = Depends(get_current_user)):
-    system_prompt = "You are an AI assistant for an AI Resume Manager platform. Be concise and helpful."
-    full_prompt = f"{system_prompt}\nUser: {message.message}\nAssistant:"
-    outputs = text_generator(full_prompt, max_length=300)[0]["generated_text"]
-    reply = outputs.replace(full_prompt, "").strip()
-    await db.chats.insert_one({
-        "user_message": message.message,
-        "ai_response": reply,
-        "user_email": current_user["email"],
-        "timestamp": datetime.utcnow()
-    })
-    return {"response": reply}
+async def chat_with_ai(
+    message: ChatMessage,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        system_prompt = """
+        You are an AI assistant for an AI Resume Manager platform. You help users understand:
+        - How the resume ranking system works (using Sentence-BERT similarity)
+        - Best practices for resume writing
+        - Interview preparation tips
+        - Platform features and navigation
+        
+        Be helpful, professional, and concise in your responses.
+        """
+        
+        # --- MODIFIED: Use Google Gemini ---
+        reply = ""
+        if gemini_model:
+            # Context can be added here if needed, but for a simple chat, just combine
+            full_prompt = f"{system_prompt}\n\nUser: {message.message}\nAssistant:"
+            
+            generation_config = genai.types.GenerationConfig(max_output_tokens=300)
+
+            try:
+                response = await gemini_model.generate_content_async(
+                    full_prompt,
+                    generation_config=generation_config
+                )
+                reply = response.text
+            except ValueError:
+                reply = "The response was blocked due to safety settings. Please rephrase your request."
+            except Exception as e:
+                reply = f"Error generating response: {str(e)}"
+        else:
+            # Mock responses for common questions
+            mock_responses = {
+                "how does ranking work": "Our system uses Sentence-BERT, an advanced AI model, to understand the semantic meaning of both job descriptions and resumes. It calculates similarity scores to rank candidates based on relevance.",
+                "resume tips": "Focus on quantifiable achievements, use relevant keywords, tailor your resume for each job, and ensure clear formatting with consistent structure.",
+                "interview": "Prepare by researching the company, practicing common questions, preparing specific examples using the STAR method, and asking thoughtful questions about the role.",
+                "default": "I'm here to help you with resume management, interview preparation, and understanding our AI-powered ranking system. What specific question do you have?"
+            }
+            
+            reply = mock_responses.get("default", mock_responses["default"])
+            for key in mock_responses:
+                if key in message.message.lower():
+                    reply = mock_responses[key]
+                    break
+        # --- End Modification ---
+
+        # Save chat interaction
+        chat_doc = {
+            "user_message": message.message,
+            "ai_response": reply,
+            "user_email": current_user["email"],
+            "timestamp": datetime.utcnow()
+        }
+        
+        await db.chats.insert_one(chat_doc)
+        
+        return {"response": reply}
+        
+    except Exception as e:
+        return {"response": "I'm experiencing some technical difficulties. Please try again later or contact support."}
 
 @app.get("/templates")
 async def get_resume_templates():

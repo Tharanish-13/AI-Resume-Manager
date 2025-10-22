@@ -10,16 +10,24 @@ import ResumeAnalyzer from './pages/ResumeAnalyzer';
 import ResumeDesigner from './pages/ResumeDesigner';
 import ResumeEnhancer from './pages/ResumeEnhancer';
 import InterviewTrainer from './pages/InterviewTrainer';
+import Uploads from './pages/Uploads'; 
 import AIAssistant from './components/AIAssistant';
 import { Toaster } from './components/ui/Toaster';
+import { ToastProvider } from './components/ui/Toaster'; // <-- 1. IMPORT THE PROVIDER
 
-// Protected route component
-const ProtectedRoute = ({ children }) => {
+// ProtectedRoute component
+const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user } = useAuth();
-  return user ? children : <Navigate to="/login" />;
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" />;
+  }
+  return children;
 };
 
-// Public route component (redirect to dashboard if logged in)
+// PublicRoute component
 const PublicRoute = ({ children }) => {
   const { user } = useAuth();
   return !user ? children : <Navigate to="/dashboard" />;
@@ -27,63 +35,44 @@ const PublicRoute = ({ children }) => {
 
 function AppContent() {
   const { user } = useAuth();
+  const allRoles = ['student', 'hr'];
+  const studentOnly = ['student'];
 
   return (
     <div className="min-h-screen bg-gray-50">
       {user && <Navigation />}
       
       <Routes>
-        <Route path="/" element={
-          <PublicRoute>
-            <Landing />
-          </PublicRoute>
-        } />
+        {/* Public Routes */}
+        <Route path="/" element={<PublicRoute><Landing /></PublicRoute>} />
+        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
         
-        <Route path="/login" element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        } />
-        
-        <Route path="/register" element={
-          <PublicRoute>
-            <Register />
-          </PublicRoute>
-        } />
-        
+        {/* Routes for all authenticated users */}
         <Route path="/dashboard" element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
+          <ProtectedRoute allowedRoles={allRoles}><Dashboard /></ProtectedRoute>
         } />
-        
         <Route path="/analyzer" element={
-          <ProtectedRoute>
-            <ResumeAnalyzer />
-          </ProtectedRoute>
+          <ProtectedRoute allowedRoles={allRoles}><ResumeAnalyzer /></ProtectedRoute>
+        } />
+        <Route path="/uploads" element={
+          <ProtectedRoute allowedRoles={allRoles}><Uploads /></ProtectedRoute>
         } />
         
+        {/* Routes for students only */}
         <Route path="/designer" element={
-          <ProtectedRoute>
-            <ResumeDesigner />
-          </ProtectedRoute>
+          <ProtectedRoute allowedRoles={studentOnly}><ResumeDesigner /></ProtectedRoute>
         } />
-        
         <Route path="/enhancer" element={
-          <ProtectedRoute>
-            <ResumeEnhancer />
-          </ProtectedRoute>
+          <ProtectedRoute allowedRoles={studentOnly}><ResumeEnhancer /></ProtectedRoute>
         } />
-        
         <Route path="/interview" element={
-          <ProtectedRoute>
-            <InterviewTrainer />
-          </ProtectedRoute>
+          <ProtectedRoute allowedRoles={studentOnly}><InterviewTrainer /></ProtectedRoute>
         } />
       </Routes>
       
       {user && <AIAssistant />}
-      <Toaster />
+      <Toaster /> {/* This is correct - it displays the toasts */}
     </div>
   );
 }
@@ -92,7 +81,10 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <AppContent />
+        {/* 2. WRAP YOUR APP CONTENT WITH THE PROVIDER */}
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </Router>
     </AuthProvider>
   );

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react'; // Added useMemo
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -11,7 +11,8 @@ import {
   User, 
   LogOut,
   Menu,
-  X
+  X,
+  HardDrive // <-- ADD THIS ICON
 } from 'lucide-react';
 
 const Navigation = () => {
@@ -19,13 +20,31 @@ const Navigation = () => {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Analyzer', path: '/analyzer', icon: Search },
-    { name: 'Designer', path: '/designer', icon: Palette },
-    { name: 'Enhancer', path: '/enhancer', icon: Zap },
-    { name: 'Interview', path: '/interview', icon: MessageCircle },
-  ];
+  // Use useMemo to dynamically create navItems based on user role
+  const navItems = useMemo(() => {
+    // Links available to all authenticated roles (student, hr)
+    const baseNavItems = [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Analyzer', path: '/analyzer', icon: Search },
+      { name: 'Uploads', path: '/uploads', icon: HardDrive }, // <-- ADDED THIS LINE
+    ];
+
+    // Links available only to students
+    const studentNavItems = [
+      { name: 'Designer', path: '/designer', icon: Palette },
+      { name: 'Enhancer', path: '/enhancer', icon: Zap },
+      { name: 'Interview', path: '/interview', icon: MessageCircle },
+    ];
+
+    // Check user role and combine arrays
+    if (user?.role === 'student') {
+      return [...baseNavItems, ...studentNavItems];
+    }
+    
+    // Default: HR (or any other role) just gets the base items
+    return baseNavItems;
+
+  }, [user?.role]); // Dependency: re-calculate only when user.role changes
 
   const isActive = (path) => location.pathname === path;
 
