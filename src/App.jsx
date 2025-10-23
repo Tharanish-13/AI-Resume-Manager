@@ -13,7 +13,8 @@ import InterviewTrainer from './pages/InterviewTrainer';
 import Uploads from './pages/Uploads'; 
 import AIAssistant from './components/AIAssistant';
 import { Toaster } from './components/ui/Toaster';
-import { ToastProvider } from './components/ui/Toaster'; // <-- 1. IMPORT THE PROVIDER
+import { ToastProvider } from './components/ui/Toaster';
+import AnalysisHistory from './pages/AnalysisHistory'; 
 
 // ProtectedRoute component
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -34,9 +35,12 @@ const PublicRoute = ({ children }) => {
 };
 
 function AppContent() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const allRoles = ['student', 'hr'];
   const studentOnly = ['student'];
+  const hrOnly = ['hr'];
+
+  if (isLoading) { /* ... Loading spinner ... */ }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -59,6 +63,10 @@ function AppContent() {
           <ProtectedRoute allowedRoles={allRoles}><Uploads /></ProtectedRoute>
         } />
         
+        <Route path="/history" element={
+          <ProtectedRoute allowedRoles={hrOnly}><AnalysisHistory /></ProtectedRoute>
+          } />
+
         {/* Routes for students only */}
         <Route path="/designer" element={
           <ProtectedRoute allowedRoles={studentOnly}><ResumeDesigner /></ProtectedRoute>

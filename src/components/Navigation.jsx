@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'; // Added useMemo
+import React, { useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -12,7 +12,8 @@ import {
   LogOut,
   Menu,
   X,
-  HardDrive // <-- ADD THIS ICON
+  HardDrive,
+  History
 } from 'lucide-react';
 
 const Navigation = () => {
@@ -22,14 +23,19 @@ const Navigation = () => {
 
   // Use useMemo to dynamically create navItems based on user role
   const navItems = useMemo(() => {
-    // Links available to all authenticated roles (student, hr)
+    // Links available to ALL authenticated roles (student, hr)
     const baseNavItems = [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Analyzer', path: '/analyzer', icon: Search },
-      { name: 'Uploads', path: '/uploads', icon: HardDrive }, // <-- ADDED THIS LINE
     ];
 
-    // Links available only to students
+    // Links available ONLY to HR
+    const hrNavItems = [
+      { name: 'Uploads', path: '/uploads', icon: HardDrive },
+      { name: 'History', path: '/history', icon: History },
+    ];
+
+    // Links available ONLY to students
     const studentNavItems = [
       { name: 'Designer', path: '/designer', icon: Palette },
       { name: 'Enhancer', path: '/enhancer', icon: Zap },
@@ -41,7 +47,11 @@ const Navigation = () => {
       return [...baseNavItems, ...studentNavItems];
     }
     
-    // Default: HR (or any other role) just gets the base items
+    if (user?.role === 'hr') {
+      return [...baseNavItems, ...hrNavItems];
+    }
+    
+    // Default: for any other role, just show base items
     return baseNavItems;
 
   }, [user?.role]); // Dependency: re-calculate only when user.role changes
