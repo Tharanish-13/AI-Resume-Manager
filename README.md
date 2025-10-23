@@ -236,6 +236,6 @@ For technical support or questions:
 - Review the codebase for implementation details
 - Open an issue on the repository
 
----
+--
 
 **AI Resume Manager** - Transforming recruitment with artificial intelligence 🚀
