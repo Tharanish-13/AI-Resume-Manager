@@ -10,6 +10,7 @@ import ResumeAnalyzer from './pages/ResumeAnalyzer';
 import ResumeDesigner from './pages/ResumeDesigner';
 import ResumeEnhancer from './pages/ResumeEnhancer';
 import InterviewTrainer from './pages/InterviewTrainer';
+import Analytics from './pages/Analytics';
 import AIAssistant from './components/AIAssistant';
 import { Toaster } from './components/ui/Toaster';
 
@@ -78,6 +79,12 @@ function AppContent() {
         <Route path="/interview" element={
           <ProtectedRoute>
             <InterviewTrainer />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/analytics" element={
+          <ProtectedRoute>
+            <Analytics />
           </ProtectedRoute>
         } />
       </Routes>

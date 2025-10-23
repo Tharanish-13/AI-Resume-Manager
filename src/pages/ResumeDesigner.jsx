@@ -48,8 +48,11 @@ const ResumeDesigner = () => {
   // Modal state for preview
   const [showPreview, setShowPreview] = useState(false);
 
-  // Ref for PDF download
+  // Ref for preview card (we will clone this for PDF capture)
   const previewRef = useRef();
+
+  // Controlled input for skills
+  const [skillsInput, setSkillsInput] = useState('');
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -70,75 +73,151 @@ const ResumeDesigner = () => {
   const handleInputChange = (section, field, value, index = null) => {
     setResumeData(prev => {
       const newData = { ...prev };
-      
+
       if (index !== null) {
-        newData[section][index][field] = value;
+        // immutable update for nested arrays
+        newData[section] = newData[section].map((item, i) =>
+          i === index ? { ...item, [field]: value } : item
+        );
       } else if (section === 'skills') {
-        newData[section] = value.split(',').map(skill => skill.trim()).filter(skill => skill);
+        // for programmatic updates only
+        newData[section] = Array.isArray(value)
+          ? value
+          : value.split(',').map(skill => skill.trim()).filter(Boolean);
       } else {
-        newData[section][field] = value;
+        newData[section] = { ...newData[section], [field]: value };
       }
-      
+
       return newData;
     });
   };
 
-  const addSection = (section) => {
+  // Add/Remove sections
+  const addSection = (section, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
     setResumeData(prev => {
       const newData = { ...prev };
-      
       if (section === 'experience') {
-        newData.experience.push({
-          title: '',
-          company: '',
-          duration: '',
-          description: ''
-        });
+        newData.experience = [...newData.experience, { title: '', company: '', duration: '', description: '' }];
       } else if (section === 'education') {
-        newData.education.push({
-          degree: '',
-          school: '',
-          year: '',
-          gpa: ''
-        });
+        newData.education = [...newData.education, { degree: '', school: '', year: '', gpa: '' }];
       } else if (section === 'projects') {
-        newData.projects.push({
-          name: '',
-          description: '',
-          technologies: ''
-        });
+        newData.projects = [...newData.projects, { name: '', description: '', technologies: '' }];
       }
-      
       return newData;
     });
   };
 
-  const removeSection = (section, index) => {
+  const removeSection = (section, index, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
     setResumeData(prev => {
       const newData = { ...prev };
-      newData[section].splice(index, 1);
+      newData[section] = newData[section].filter((_, i) => i !== index);
       return newData;
     });
   };
 
-  // PDF Download Handler
+  // Skills helpers
+  const addSkill = (raw) => {
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    setResumeData(prev => ({ ...prev, skills: [...prev.skills, ...parts] }));
+  };
+
+  const handleSkillsInputChange = (e) => {
+    setSkillsInput(e.target.value);
+  };
+
+  const handleSkillsKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addSkill(skillsInput);
+      setSkillsInput('');
+    } else if (e.key === ',') {
+      e.preventDefault();
+      addSkill(skillsInput);
+      setSkillsInput('');
+    } else if (e.key === 'Backspace' && skillsInput === '') {
+      setResumeData(prev => ({ ...prev, skills: prev.skills.slice(0, -1) }));
+    }
+  };
+
+  const handleSkillBlur = () => {
+    if (skillsInput.trim()) {
+      addSkill(skillsInput);
+      setSkillsInput('');
+    }
+  };
+
+  const removeSkill = (index, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    setResumeData(prev => ({ ...prev, skills: prev.skills.filter((_, i) => i !== index) }));
+  };
+
+  // PDF Download Handler — clone visible preview node, capture it, then remove clone
   const handleDownloadPDF = async () => {
-    const input = previewRef.current;
-    if (!input) return;
-    const canvas = await html2canvas(input, { scale: 2 });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'pt',
-      format: 'a4'
-    });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgProps = pdf.getImageProperties(imgData);
-    const pdfWidth = pageWidth;
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save('resume.pdf');
+    const source = previewRef.current;
+    if (!source) return;
+
+    // Clone the preview node so we capture exactly what user sees.
+    const clone = source.cloneNode(true);
+
+    // Apply styles to make clone render correctly for html2canvas
+    clone.style.position = 'absolute';
+    clone.style.left = '-10000px'; // keep offscreen so user doesn't see flicker
+    clone.style.top = '0px';
+    // make sure width matches original (important for layout)
+    const rect = source.getBoundingClientRect();
+    clone.style.width = `${Math.round(rect.width)}px`;
+    clone.style.background = '#ffffff';
+    clone.style.padding = window.getComputedStyle(source).padding || '16px';
+    clone.style.boxSizing = 'border-box';
+
+    document.body.appendChild(clone);
+
+    try {
+      const canvas = await html2canvas(clone, {
+        scale: 2,
+        useCORS: true,
+        // ensure offscreen content is captured
+        scrollY: -window.scrollY
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4'
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // first page
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      // extra pages
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save('resume.pdf');
+    } catch (err) {
+      console.error('PDF generation failed', err);
+    } finally {
+      // cleanup clone
+      if (clone && clone.parentNode) clone.parentNode.removeChild(clone);
+    }
   };
 
   if (loading) {
@@ -203,7 +282,7 @@ const ResumeDesigner = () => {
           <div className="lg:col-span-2">
             <div className="bg-white rounded-xl p-6 shadow-sm">
               <h2 className="text-xl font-semibold text-gray-900 mb-6">Resume Information</h2>
-              
+
               {/* Personal Information */}
               <div className="mb-8">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Personal Information</h3>
@@ -251,7 +330,8 @@ const ResumeDesigner = () => {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Experience</h3>
                   <button
-                    onClick={() => addSection('experience')}
+                    type="button"
+                    onClick={(e) => addSection('experience', e)}
                     className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                   >
                     + Add Experience
@@ -291,7 +371,8 @@ const ResumeDesigner = () => {
                     />
                     {resumeData.experience.length > 1 && (
                       <button
-                        onClick={() => removeSection('experience', index)}
+                        type="button"
+                        onClick={(e) => removeSection('experience', index, e)}
                         className="mt-2 text-red-600 hover:text-red-700 text-sm"
                       >
                         Remove
@@ -304,13 +385,30 @@ const ResumeDesigner = () => {
               {/* Skills */}
               <div className="mb-8">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">Skills</h3>
-                <input
-                  type="text"
-                  placeholder="Enter skills separated by commas (e.g., JavaScript, React, Node.js)"
-                  value={resumeData.skills.join(', ')}
-                  onChange={(e) => handleInputChange('skills', null, e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                <div className="border rounded-lg px-3 py-2">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {resumeData.skills.map((skill, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={(e) => removeSkill(index, e)}
+                        className="flex items-center gap-2 bg-blue-50 text-blue-700 text-xs rounded px-2 py-1"
+                      >
+                        <span>{skill}</span>
+                        <span className="text-red-500">✕</span>
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Type skill and press Enter or comma"
+                    value={skillsInput}
+                    onChange={handleSkillsInputChange}
+                    onKeyDown={handleSkillsKeyDown}
+                    onBlur={handleSkillBlur}
+                    className="w-full px-2 py-1 outline-none"
+                  />
+                </div>
               </div>
 
               {/* Education */}
@@ -318,7 +416,8 @@ const ResumeDesigner = () => {
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Education</h3>
                   <button
-                    onClick={() => addSection('education')}
+                    type="button"
+                    onClick={(e) => addSection('education', e)}
                     className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                   >
                     + Add Education
@@ -358,7 +457,8 @@ const ResumeDesigner = () => {
                     </div>
                     {resumeData.education.length > 1 && (
                       <button
-                        onClick={() => removeSection('education', index)}
+                        type="button"
+                        onClick={(e) => removeSection('education', index, e)}
                         className="mt-2 text-red-600 hover:text-red-700 text-sm"
                       >
                         Remove
@@ -381,14 +481,14 @@ const ResumeDesigner = () => {
                   <p className="text-gray-600">{resumeData.personalInfo.phone}</p>
                   <p className="text-gray-600">{resumeData.personalInfo.location}</p>
                 </div>
-                
+
                 {resumeData.personalInfo.summary && (
                   <div className="mb-6">
                     <h4 className="font-semibold text-gray-900 mb-2">Summary</h4>
                     <p className="text-sm text-gray-700">{resumeData.personalInfo.summary}</p>
                   </div>
                 )}
-                
+
                 {resumeData.experience.some(exp => exp.title) && (
                   <div className="mb-6">
                     <h4 className="font-semibold text-gray-900 mb-2">Experience</h4>
@@ -401,7 +501,7 @@ const ResumeDesigner = () => {
                     ))}
                   </div>
                 )}
-                
+
                 {resumeData.skills.length > 0 && (
                   <div className="mb-6">
                     <h4 className="font-semibold text-gray-900 mb-2">Skills</h4>
@@ -414,7 +514,7 @@ const ResumeDesigner = () => {
                     </div>
                   </div>
                 )}
-                
+
                 {resumeData.education.some(edu => edu.degree) && (
                   <div>
                     <h4 className="font-semibold text-gray-900 mb-2">Education</h4>
@@ -428,23 +528,25 @@ const ResumeDesigner = () => {
                   </div>
                 )}
               </div>
-              
+
               <div className="mt-6 space-y-3">
                 <button
+                  type="button"
                   className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 flex items-center justify-center space-x-2"
-                  onClick={() => setShowPreview(true)}
+                  onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
                 >
                   <Eye className="w-5 h-5" />
                   <span>Preview Full Resume</span>
                 </button>
                 <button
+                  type="button"
                   className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 flex items-center justify-center space-x-2"
                   onClick={handleDownloadPDF}
                 >
                   <Download className="w-5 h-5" />
                   <span>Download PDF</span>
                 </button>
-                <button className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-purple-700 flex items-center justify-center space-x-2">
+                <button type="button" className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-purple-700 flex items-center justify-center space-x-2">
                   <Zap className="w-5 h-5" />
                   <span>AI Enhance</span>
                 </button>
@@ -471,6 +573,7 @@ const ResumeDesigner = () => {
         }}
       >
         <button
+          type="button"
           onClick={() => setShowPreview(false)}
           className="mb-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 float-right"
         >
@@ -498,6 +601,17 @@ const ResumeDesigner = () => {
               ))}
             </div>
           )}
+          {resumeData.education.some(edu => edu.degree) && (
+            <div>
+              <h4 className="font-semibold mb-1">Education</h4>
+              {resumeData.education.filter(edu => edu.degree).map((edu, idx) => (
+                <div key={idx} className="mb-2">
+                  <strong>{edu.degree}</strong> at {edu.school} ({edu.year})
+                  {edu.gpa && <span> | GPA: {edu.gpa}</span>}
+                </div>
+              ))}
+            </div>
+          )}
           {resumeData.skills.length > 0 && (
             <div className="mb-4">
               <h4 className="font-semibold mb-1">Skills</h4>
@@ -508,17 +622,6 @@ const ResumeDesigner = () => {
                   </span>
                 ))}
               </div>
-            </div>
-          )}
-          {resumeData.education.some(edu => edu.degree) && (
-            <div>
-              <h4 className="font-semibold mb-1">Education</h4>
-              {resumeData.education.filter(edu => edu.degree).map((edu, idx) => (
-                <div key={idx} className="mb-2">
-                  <strong>{edu.degree}</strong> at {edu.school} ({edu.year})
-                  {edu.gpa && <span> | GPA: {edu.gpa}</span>}
-                </div>
-              ))}
             </div>
           )}
           {resumeData.projects.some(proj => proj.name) && (
