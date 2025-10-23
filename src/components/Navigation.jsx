@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -11,7 +11,10 @@ import {
   User, 
   LogOut,
   Menu,
-  X
+  X,
+  HardDrive,
+  History,
+  BarChart3
 } from 'lucide-react';
 
 const Navigation = () => {
@@ -19,13 +22,41 @@ const Navigation = () => {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Analyzer', path: '/analyzer', icon: Search },
-    { name: 'Designer', path: '/designer', icon: Palette },
-    { name: 'Enhancer', path: '/enhancer', icon: Zap },
-    { name: 'Interview', path: '/interview', icon: MessageCircle },
-  ];
+  // Use useMemo to dynamically create navItems based on user role
+  const navItems = useMemo(() => {
+    // Links available to ALL authenticated roles (student, hr)
+    const baseNavItems = [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Analyzer', path: '/analyzer', icon: Search },
+    ];
+
+    // Links available ONLY to HR
+    const hrNavItems = [
+      { name: 'Uploads', path: '/uploads', icon: HardDrive },
+      { name: 'History', path: '/history', icon: History },
+      { name: 'Analytics', path: '/analytics', icon: BarChart3 } // <-- added Analytics for HR
+    ];
+
+    // Links available ONLY to students
+    const studentNavItems = [
+      { name: 'Designer', path: '/designer', icon: Palette },
+      { name: 'Enhancer', path: '/enhancer', icon: Zap },
+      { name: 'Interview', path: '/interview', icon: MessageCircle },
+    ];
+
+    // Check user role and combine arrays
+    if (user?.role === 'student') {
+      return [...baseNavItems, ...studentNavItems];
+    }
+    
+    if (user?.role === 'hr') {
+      return [...baseNavItems, ...hrNavItems];
+    }
+    
+    // Default: for any other role, just show base items
+    return baseNavItems;
+
+  }, [user?.role]); // Dependency: re-calculate only when user.role changes
 
   const isActive = (path) => location.pathname === path;
 

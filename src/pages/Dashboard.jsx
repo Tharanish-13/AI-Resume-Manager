@@ -1,17 +1,31 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { dashboardService } from '../services/api';
-import { 
-  FileText, 
-  Briefcase, 
-  TrendingUp, 
-  Users, 
+import {
+  FileText,
+  Briefcase,
+  TrendingUp,
+  Search,
   Clock,
   Activity,
-  PieChart,
-  BarChart3
+  Palette,
+  Zap,
+  BarChart3,
+  Loader2
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RechartsPieChart, Cell } from 'recharts';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -20,133 +34,93 @@ const Dashboard = () => {
 
   useEffect(() => {
     const fetchStats = async () => {
+      setLoading(true);
       try {
         const data = await dashboardService.getStats();
-        setStats(data);
+        setStats(data || {});
       } catch (error) {
         console.error('Failed to fetch dashboard stats:', error);
+        setStats({});
       } finally {
         setLoading(false);
       }
     };
-
     fetchStats();
   }, []);
 
-  // Mock data for charts
-  const chartData = [
-    { name: 'Jan', value: 20 },
-    { name: 'Feb', value: 35 },
-    { name: 'Mar', value: 28 },
-    { name: 'Apr', value: 42 },
-    { name: 'May', value: 38 },
-    { name: 'Jun', value: 55 },
+  // Student-focused chart (explicit metric names)
+  const defaultStudentChart = [
+    { name: 'Jan', resumes_created: 2, applications_submitted: 1, profile_views: 12 },
+    { name: 'Feb', resumes_created: 3, applications_submitted: 2, profile_views: 18 },
+    { name: 'Mar', resumes_created: 4, applications_submitted: 2, profile_views: 22 },
+    { name: 'Apr', resumes_created: 3, applications_submitted: 1, profile_views: 16 },
+    { name: 'May', resumes_created: 5, applications_submitted: 3, profile_views: 28 },
+    { name: 'Jun', resumes_created: 6, applications_submitted: 4, profile_views: 34 }
+  ];
+
+  // HR default chart
+  const hrChartData = [
+    { name: 'Jan', value: 20 }, { name: 'Feb', value: 35 }, { name: 'Mar', value: 28 },
+    { name: 'Apr', value: 42 }, { name: 'May', value: 38 }, { name: 'Jun', value: 55 }
   ];
 
   const pieData = [
     { name: 'Technical', value: 35, color: '#3B82F6' },
     { name: 'Creative', value: 25, color: '#8B5CF6' },
     { name: 'Business', value: 20, color: '#10B981' },
-    { name: 'Healthcare', value: 20, color: '#F59E0B' },
+    { name: 'Healthcare', value: 20, color: '#F59E0B' }
   ];
 
-  const statCards = [
-    {
-      title: 'Total Resumes',
-      value: stats?.total_resumes || 0,
-      icon: FileText,
-      color: 'from-blue-500 to-blue-600',
-      change: '+12%'
-    },
-    {
-      title: 'Job Analyses',
-      value: stats?.total_analyses || 0,
-      icon: Briefcase,
-      color: 'from-purple-500 to-purple-600',
-      change: '+8%'
-    },
-    {
-      title: 'Success Rate',
-      value: '94%',
-      icon: TrendingUp,
-      color: 'from-green-500 to-green-600',
-      change: '+3%'
-    },
-    {
-      title: 'Time Saved',
-      value: '47h',
-      icon: Clock,
-      color: 'from-orange-500 to-orange-600',
-      change: '+15%'
-    }
-  ];
-
-  const quickActions = user?.role === 'hr' ? [
-    {
-      title: 'Upload Resumes',
-      description: 'Upload and analyze new resumes',
-      icon: FileText,
-      href: '/analyzer',
-      color: 'from-blue-500 to-blue-600'
-    },
-    {
-      title: 'View Analytics',
-      description: 'Track hiring performance',
-      icon: BarChart3,
-      href: '/analytics',
-      color: 'from-purple-500 to-purple-600'
-    }
+  // Stat Cards Data — only changed for student first card: Total Templates
+  const statCards = user?.role === 'student' ? [
+    { title: 'Total Templates', value: stats?.total_templates ?? '...', icon: Palette, color: 'from-blue-500 to-blue-600', change: stats ? '+5%' : '' },
+    { title: 'Saved Resumes', value: stats?.saved_resumes ?? '...', icon: FileText, color: 'from-purple-500 to-purple-600', change: stats ? '+2%' : '' },
+    { title: 'Applications', value: stats?.applications_sent ?? '...', icon: Briefcase, color: 'from-green-500 to-green-600', change: stats ? '+10%' : '' },
+    { title: 'Profile Strength', value: stats?.profile_strength ? `${stats.profile_strength}%` : '...', icon: TrendingUp, color: 'from-orange-500 to-orange-600', change: stats ? '+4%' : '' }
   ] : [
-    {
-      title: 'Design Resume',
-      description: 'Create a professional resume',
-      icon: PieChart,
-      href: '/designer',
-      color: 'from-blue-500 to-blue-600'
-    },
-    {
-      title: 'Enhance Resume',
-      description: 'Get AI-powered improvements',
-      icon: TrendingUp,
-      href: '/enhancer',
-      color: 'from-green-500 to-green-600'
-    }
+    { title: 'Total Resumes', value: stats?.total_resumes ?? '...', icon: FileText, color: 'from-blue-500 to-blue-600', change: stats ? '+12%' : '' },
+    { title: 'Job Analyses', value: stats?.total_analyses ?? '...', icon: Briefcase, color: 'from-purple-500 to-purple-600', change: stats ? '+8%' : '' },
+    { title: 'Success Rate', value: stats ? '94%' : '...', icon: TrendingUp, color: 'from-green-500 to-green-600', change: stats ? '+3%' : '' },
+    { title: 'Time Saved', value: stats ? '47h' : '...', icon: Clock, color: 'from-orange-500 to-orange-600', change: stats ? '+15%' : '' }
+  ];
+
+  // Quick Actions - unchanged
+  const quickActions = user?.role === 'hr' ? [
+    { title: 'Analyze Resumes', description: 'Upload JD & analyze resumes', icon: Search, href: '/analyzer', color: 'from-blue-500 to-blue-600' },
+    { title: 'Manage Uploads', description: 'View and manage all resumes', icon: FileText, href: '/uploads', color: 'from-purple-500 to-purple-600' },
+    { title: 'View Analytics', description: 'See usage & activity analytics', icon: BarChart3, href: '/analytics', color: 'from-indigo-500 to-indigo-600' }
+  ] : [
+    { title: 'Design Resume', description: 'Create a professional resume', icon: Palette, href: '/designer', color: 'from-blue-500 to-blue-600' },
+    { title: 'Enhance Resume', description: 'Get AI-powered improvements', icon: Zap, href: '/enhancer', color: 'from-green-500 to-green-600' }
   ];
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded mb-6 w-1/3"></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="bg-white rounded-xl p-6 shadow-sm">
-                  <div className="h-4 bg-gray-200 rounded mb-4"></div>
-                  <div className="h-8 bg-gray-200 rounded mb-2"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
       </div>
     );
   }
+
+  // choose activity data and total based on role
+  const activityChartData = user?.role === 'student'
+    ? (stats?.student_monthly_activity || stats?.monthly_activity_student || defaultStudentChart)
+    : (stats?.monthly_activity || hrChartData);
+
+  const activityTotal = user?.role === 'student'
+    ? (stats?.resumes_created_total ?? stats?.resumes_created ?? activityChartData.reduce((s, it) => s + (it.resumes_created ?? 0), 0))
+    : (stats?.total_resumes ?? 0);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome back, {user?.full_name}!
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back, {user?.full_name}!</h1>
           <p className="text-gray-600">
-            {user?.role === 'hr' 
-              ? 'Manage your recruitment pipeline with AI-powered insights' 
-              : 'Take control of your career with AI-enhanced tools'
-            }
+            {user?.role === 'hr'
+              ? 'Manage your recruitment pipeline with AI-powered insights'
+              : 'Take control of your career with AI-enhanced tools'}
           </p>
         </div>
 
@@ -160,79 +134,80 @@ const Dashboard = () => {
                   <div className={`w-12 h-12 bg-gradient-to-r ${stat.color} rounded-lg flex items-center justify-center`}>
                     <Icon className="w-6 h-6 text-white" />
                   </div>
-                  <span className="text-sm font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                    {stat.change}
-                  </span>
+                  {stat.change && <span className="text-sm font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">{stat.change}</span>}
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-1">
-                  {stat.value}
-                </h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-1">{stat.value}</h3>
                 <p className="text-gray-600 text-sm">{stat.title}</p>
               </div>
             );
           })}
         </div>
 
+        {/* Charts Section */}
         <div className="grid lg:grid-cols-3 gap-8 mb-8">
           {/* Activity Chart */}
           <div className="lg:col-span-2 bg-white rounded-xl p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Activity Overview</h2>
+              <h2 className="text-xl font-semibold text-gray-900">{user?.role === 'student' ? 'Your Activity' : 'Activity Overview'}</h2>
               <div className="flex items-center space-x-2">
                 <Activity className="w-5 h-5 text-gray-400" />
-                <span className="text-sm text-gray-500">Last 6 months</span>
+                <span className="text-sm text-gray-500">
+                  {user?.role === 'student' ? 'Shows: Resumes created, Applications submitted, Profile views' : 'Last 6 months'}
+                </span>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" stroke="#6b7280" />
-                <YAxis stroke="#6b7280" />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px'
-                  }}
-                />
-                <Bar dataKey="value" fill="url(#colorGradient)" />
-                <defs>
-                  <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.8}/>
-                  </linearGradient>
-                </defs>
-              </BarChart>
-            </ResponsiveContainer>
+
+            <div style={{ width: '100%', height: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                {user?.role === 'student' ? (
+                  <BarChart data={activityChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
+                    <YAxis stroke="#6b7280" fontSize={12} />
+                    <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px', padding: '8px' }} />
+                    <Bar dataKey="profile_views" stackId="a" fill="#8B5CF6" barSize={24} name="Profile views" />
+                    <Bar dataKey="applications_submitted" stackId="a" fill="#10B981" barSize={24} name="Applications submitted" />
+                    <Bar dataKey="resumes_created" stackId="a" fill="#3B82F6" barSize={24} name="Resumes created" />
+                  </BarChart>
+                ) : (
+                  <BarChart data={activityChartData}>
+                    <defs>
+                      <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.8} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
+                    <YAxis stroke="#6b7280" fontSize={12} />
+                    <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px', padding: '8px' }} />
+                    <Bar dataKey="value" fill="url(#colorGradient)" barSize={80} />
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+
+            <div className="mt-4 text-sm text-gray-600">
+              <strong>{user?.role === 'student' ? 'Resumes created:' : 'Total:'}</strong> {activityTotal}
+            </div>
           </div>
 
-          {/* Category Distribution */}
+          {/* Category / Top Skills Distribution */}
           <div className="bg-white rounded-xl p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Resume Categories</h2>
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">{user?.role === 'student' ? 'Top Skills' : 'Resume Categories'}</h2>
             <ResponsiveContainer width="100%" height={200}>
-              <RechartsPieChart>
-                <RechartsPieChart 
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </RechartsPieChart>
-                <Tooltip />
-              </RechartsPieChart>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2} nameKey="name">
+                  {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                </Pie>
+                <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '12px', padding: '8px' }} />
+              </PieChart>
             </ResponsiveContainer>
             <div className="mt-4 space-y-2">
               {pieData.map((item, index) => (
                 <div key={index} className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <div 
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    ></div>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
                     <span className="text-sm text-gray-600">{item.name}</span>
                   </div>
                   <span className="text-sm font-medium text-gray-900">{item.value}%</span>
@@ -242,6 +217,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Bottom Section */}
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Quick Actions */}
           <div className="lg:col-span-2 bg-white rounded-xl p-6 shadow-sm">
@@ -250,17 +226,13 @@ const Dashboard = () => {
               {quickActions.map((action, index) => {
                 const Icon = action.icon;
                 return (
-                  <a
-                    key={index}
-                    href={action.href}
-                    className="block p-4 border border-gray-200 rounded-lg hover:shadow-md transition-all duration-200 hover:scale-105"
-                  >
+                  <Link key={index} to={action.href} className="block p-4 border border-gray-200 rounded-lg hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
                     <div className={`w-10 h-10 bg-gradient-to-r ${action.color} rounded-lg flex items-center justify-center mb-3`}>
                       <Icon className="w-5 h-5 text-white" />
                     </div>
                     <h3 className="font-semibold text-gray-900 mb-1">{action.title}</h3>
                     <p className="text-sm text-gray-600">{action.description}</p>
-                  </a>
+                  </Link>
                 );
               })}
             </div>
@@ -269,21 +241,18 @@ const Dashboard = () => {
           {/* Recent Activity */}
           <div className="bg-white rounded-xl p-6 shadow-sm">
             <h2 className="text-xl font-semibold text-gray-900 mb-6">Recent Activity</h2>
-            <div className="space-y-4">
-              {stats?.recent_resumes?.slice(0, 5).map((resume, index) => (
-                <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                  <FileText className="w-5 h-5 text-gray-400" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {resume.filename}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(resume.uploaded_at).toLocaleDateString()}
-                    </p>
+            <div className="space-y-4 max-h-80 overflow-y-auto">
+              {stats?.recent_resumes && stats.recent_resumes.length > 0 ? (
+                stats.recent_resumes.map((resume) => (
+                  <div key={resume._id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{resume.filename}</p>
+                      <p className="text-xs text-gray-500">{resume.uploaded_at ? new Date(resume.uploaded_at).toLocaleDateString() : 'Date N/A'}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-              {(!stats?.recent_resumes || stats.recent_resumes.length === 0) && (
+                ))
+              ) : (
                 <div className="text-center py-8">
                   <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">No recent activity</p>
