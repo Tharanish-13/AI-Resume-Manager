@@ -238,4 +238,4 @@ For technical support or questions:
 
 --
 
-**AI Resume Manager** - Transforming recruitment with artificial intelligence 🚀
+**AI Resume Manager** - Transforming recruitment with artificial intelligence 
