@@ -4,17 +4,17 @@ A comprehensive AI-powered resume management platform built with React.js and Fa
 
 ## Features
 
-### 🤖 AI-Powered Core Features
+###  AI-Powered Core Features
 - **Resume Ranking**: Uses Sentence-BERT transformers to analyze semantic similarity between resumes and job descriptions
 - **Resume Enhancement**: LLM-powered suggestions to improve resume content for specific job roles
 - **Interview Trainer**: Interactive AI chatbot that generates job-specific questions and provides feedback
 - **AI Assistant**: Real-time help system for platform guidance and HR/interview tips
 
-### 👥 User Roles
+###  User Roles
 - **HR Professionals**: Upload multiple resumes, analyze job fit, view ranked candidates
 - **Job Seekers/Students**: Design resumes, get AI enhancements, practice interviews
 
-### 🎨 Professional UI/UX
+###  Professional UI/UX
 - Modern gradient-based design system
 - Fully responsive layouts (mobile, tablet, desktop)
 - Advanced animations and micro-interactions
